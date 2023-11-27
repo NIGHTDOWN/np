@@ -17,7 +17,7 @@
 #include <openssl/x509.h>
 #include <openssl/rsa.h>
 #include <sys/stat.h>
-// #include <signal.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
 // 缓存管道；创建共享内存空间
@@ -31,12 +31,7 @@
                                                                      \
         printf("\n");                                                \
     }
-// #define d(msg)                                               \
-    // {                                                        \
-    //     printf(" %s %s %d\n", __FILE__, __func__, __LINE__); \
-    //     printf(msg);                                         \
-    //     printf("\n");                                        \
-    // }
+
 #define SERVER_PORT "8088"
 #define _BACKLOG_ 5
 #define _BUF_SIZE_ 2099
@@ -51,15 +46,15 @@ static int m_pid;
 int exptime = 3600;
 clock_t start_time, end_time;
 pid_t pid, pid2, pid3, pid4;
-// void sigchld_handler(int signal)
-// {
-//     while (waitpid(-1, NULL, WNOHANG) > 0)
-//         ;
-// }
-// void regfork()
-// {
-//     signal(SIGCHLD, sigchld_handler);
-// }
+void sigchld_handler(int signal)
+{
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+        ;
+}
+void regfork()
+{
+    signal(SIGCHLD, sigchld_handler);
+}
 struct timeval timeout = {0, 1000000};
 
 void inittime()
@@ -192,6 +187,8 @@ char *array_find(const struct Array *my_array, const char *key)
 }
 int array_clear(struct Array *my_array)
 {
+    // free(my_array->keys);
+    // free(my_array->anode);
     free(my_array);
     my_array->size = 0;
 }
@@ -214,10 +211,19 @@ int array_push(struct Array *my_array, char *key, char *val, time_t expire_in)
     {                        // 如果没有指定过期时长，使用默认时长
         expire_in = exptime; // 默认时长为 60 秒
     }
+
     vnode.expire_time = time(NULL) + expire_in;
+
     my_array->anode[index].access_time = vnode.access_time;
+
     my_array->anode[index].expire_time = vnode.expire_time;
+
     strcpy(my_array->anode[index].values, val);
+    // my_array->anode[index].values =tmp;
+    // strcpy(my_array->anode[index].values,tmp);
+    // memcpy(my_array->anode[index].values,tmp,sizeof(tmp)+1);
+    // strncpy(my_array->anode[index].values, vnode.values, sizeof(my_array->anode[index].values) - 1);
+    // my_array->anode[index].values[sizeof(my_array->anode[index].values) - 1] = '\0';
     int size = my_array->size++;
     return size;
 }
@@ -327,65 +333,6 @@ struct CacheNode *lookup_entry(struct Cache *cache, const char *key)
     return NULL;
 }
 
-// void nlset(const char *key, const char *value, time_t expire_in)
-// {
-//     cache = mapLRUCacheToMemory(shmid);
-//     struct CacheNode *entry = lookup_entry(cache, key);
-
-//     if (entry)
-//     {
-
-//         remove_entry(cache, entry);
-//     }
-//     else if (cache->size >= CACHE_SIZE)
-//     {
-
-//         remove_entry(cache, cache->tail->prev);
-//     }
-//     else
-//     {
-
-//         cache->size++;
-//     }
-//     entry = malloc(sizeof(struct CacheNode));
-//     strcpy(entry->key, key);
-//     strcpy(entry->value, value);
-//     entry->access_time = time(NULL);
-
-//     if (expire_in == 0)
-//     {                        // 如果没有指定过期时长，使用默认时长
-//         expire_in = exptime; // 默认时长为 60 秒
-//     }
-//     entry->expire_time = time(NULL) + expire_in;
-//     // pthread_mutex_lock(&cache->mutex);  // 加锁，开始同步访问缓存
-//     add_entry(cache, entry);
-//     dd(cache->size);
-//     // pthread_mutex_unlock(&cache->mutex);// 解锁，结束同步访问缓存
-// }
-
-// char *nlget(char *key)
-// {
-//     cache = mapLRUCacheToMemory(shmid);
-
-//     struct CacheNode *entry = lookup_entry(cache, key);
-
-//     if (!entry)
-//     {
-//         return NULL;
-//     }
-
-//     if (is_expired(entry))
-//     {
-//         remove_entry(cache, entry);
-//         free(entry);
-//         return NULL;
-//     }
-//     // remove_entry(cache, entry);
-//     // add_entry(cache, entry);
-
-//     // d16(cache);
-//     return entry->value;
-// }
 // 开辟二维空间
 
 struct Array *getcacheprt()
