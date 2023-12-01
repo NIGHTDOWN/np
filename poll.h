@@ -797,7 +797,6 @@ void forward_data(client_p clientobj)
     n = nwrite(clientobj->rd, clientobj->buf, strlen(clientobj->buf));
     if (n < 0)
         d("ERROR writing to socket");
-
     while ((n = nread(clientobj->rd, buffer, _BUF_SIZE_)) > 0)
     {
 
@@ -805,7 +804,6 @@ void forward_data(client_p clientobj)
         {
             nwrite(clientobj->fd, buffer, n);
         }
-
         // bzero(buffer, _BUF_SIZE_);
         // memset(&buffer, 0, sizeof(buffer));
         clearstr(buffer);
@@ -822,6 +820,30 @@ void forward_data(client_p clientobj)
 
     shutdown(clientobj->fd, SHUT_RDWR);
 }
+//字符串填充
+void generateString(char *str, size_t length) {  
+    // 生成随机字符串  
+   
+      
+    // 如果字符串长度不够，用特定字符填充  
+    size_t actualLength = strlen(str);  
+    if (actualLength < length) {  
+        char fillChar = '*'; // 填充字符  
+        for (size_t i = actualLength; i < length; i++) {  
+            str[i] = fillChar;  
+        }  
+    }  
+      
+    str[length] = '\0'; // 添加字符串终止符  
+}  
+//前面补20字节{ip，端口}
+void incode(client_p clientobj,char *buffer){
+char *rdinfo=strcat(clientobj->ip,"-");
+rdinfo=strcat(rdinfo,clientobj->port);
+rdinfo=generateString(rdinfo,20);
+d("dsfsfdsfsdfs")6yyyyyyyyyy;
+d(rdinfo);
+}
 // 发送给服务器
 void f_send(client_p clientobj)
 {
@@ -829,6 +851,7 @@ void f_send(client_p clientobj)
     int n;
     while ((n = nread(clientobj->fd, buffer, _BUF_SIZE_)) > 0)
     {
+        incode(clientobj,buffer);
         nwrite(clientobj->rd, buffer, n);
     }
     shutdown(clientobj->rd, SHUT_RDWR);
@@ -842,7 +865,6 @@ void f_back(client_p clientobj)
     int n;
     while ((n = nread(clientobj->rd, buffer, _BUF_SIZE_)) > 0)
     {
-
         nwrite(clientobj->fd, buffer, n);
     }
 

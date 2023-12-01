@@ -17,7 +17,7 @@
 #include <openssl/x509.h>
 #include <openssl/rsa.h>
 #include <sys/stat.h>
-// #include <signal.h>
+#include <signal.h>
 #include <sys/wait.h>
 #include <time.h>
 // 缓存管道；创建共享内存空间
@@ -31,18 +31,14 @@
                                                                      \
         printf("\n");                                                \
     }
-// #define d(msg)                                               \
-    // {                                                        \
-    //     printf(" %s %s %d\n", __FILE__, __func__, __LINE__); \
-    //     printf(msg);                                         \
-    //     printf("\n");                                        \
-    // }
+
 #define SERVER_PORT "8088"
 #define _BACKLOG_ 5
 #define _BUF_SIZE_ 2099
 #define CACHE_SIZE 840000 // 缓存大小
 #define _MAX_ 64
 #define MAX_KEYS 100
+#define INCODE_PAD 40
 #define MAX_KEY_LENGTH 150
 #define SHMID_KEY 0x169
 // 守护进程标识；0非后台进程，1后台进程
@@ -51,15 +47,15 @@ static int m_pid;
 int exptime = 3600;
 clock_t start_time, end_time;
 pid_t pid, pid2, pid3, pid4;
-// void sigchld_handler(int signal)
-// {
-//     while (waitpid(-1, NULL, WNOHANG) > 0)
-//         ;
-// }
-// void regfork()
-// {
-//     signal(SIGCHLD, sigchld_handler);
-// }
+void sigchld_handler(int signal)
+{
+    while (waitpid(-1, NULL, WNOHANG) > 0)
+        ;
+}
+void regfork()
+{
+    signal(SIGCHLD, sigchld_handler);
+}
 struct timeval timeout = {0, 1000000};
 
 void inittime()
@@ -139,8 +135,10 @@ void dd(int str)
 void d16(const char *buffer)
 {
     int size = sizeof(buffer) / sizeof(char);
-    //  dd(&size);
-    size_t len = 500;
+    
+    size_t len = strlen(buffer);
+     
+    // size_t len = size;
     if (buffer == NULL || len <= 0)
     {
         return;
@@ -192,6 +190,8 @@ char *array_find(const struct Array *my_array, const char *key)
 }
 int array_clear(struct Array *my_array)
 {
+    // free(my_array->keys);
+    // free(my_array->anode);
     free(my_array);
     my_array->size = 0;
 }
@@ -214,10 +214,19 @@ int array_push(struct Array *my_array, char *key, char *val, time_t expire_in)
     {                        // 如果没有指定过期时长，使用默认时长
         expire_in = exptime; // 默认时长为 60 秒
     }
+
     vnode.expire_time = time(NULL) + expire_in;
+
     my_array->anode[index].access_time = vnode.access_time;
+
     my_array->anode[index].expire_time = vnode.expire_time;
+
     strcpy(my_array->anode[index].values, val);
+    // my_array->anode[index].values =tmp;
+    // strcpy(my_array->anode[index].values,tmp);
+    // memcpy(my_array->anode[index].values,tmp,sizeof(tmp)+1);
+    // strncpy(my_array->anode[index].values, vnode.values, sizeof(my_array->anode[index].values) - 1);
+    // my_array->anode[index].values[sizeof(my_array->anode[index].values) - 1] = '\0';
     int size = my_array->size++;
     return size;
 }
@@ -327,65 +336,6 @@ struct CacheNode *lookup_entry(struct Cache *cache, const char *key)
     return NULL;
 }
 
-// void nlset(const char *key, const char *value, time_t expire_in)
-// {
-//     cache = mapLRUCacheToMemory(shmid);
-//     struct CacheNode *entry = lookup_entry(cache, key);
-
-//     if (entry)
-//     {
-
-//         remove_entry(cache, entry);
-//     }
-//     else if (cache->size >= CACHE_SIZE)
-//     {
-
-//         remove_entry(cache, cache->tail->prev);
-//     }
-//     else
-//     {
-
-//         cache->size++;
-//     }
-//     entry = malloc(sizeof(struct CacheNode));
-//     strcpy(entry->key, key);
-//     strcpy(entry->value, value);
-//     entry->access_time = time(NULL);
-
-//     if (expire_in == 0)
-//     {                        // 如果没有指定过期时长，使用默认时长
-//         expire_in = exptime; // 默认时长为 60 秒
-//     }
-//     entry->expire_time = time(NULL) + expire_in;
-//     // pthread_mutex_lock(&cache->mutex);  // 加锁，开始同步访问缓存
-//     add_entry(cache, entry);
-//     dd(cache->size);
-//     // pthread_mutex_unlock(&cache->mutex);// 解锁，结束同步访问缓存
-// }
-
-// char *nlget(char *key)
-// {
-//     cache = mapLRUCacheToMemory(shmid);
-
-//     struct CacheNode *entry = lookup_entry(cache, key);
-
-//     if (!entry)
-//     {
-//         return NULL;
-//     }
-
-//     if (is_expired(entry))
-//     {
-//         remove_entry(cache, entry);
-//         free(entry);
-//         return NULL;
-//     }
-//     // remove_entry(cache, entry);
-//     // add_entry(cache, entry);
-
-//     // d16(cache);
-//     return entry->value;
-// }
 // 开辟二维空间
 
 struct Array *getcacheprt()
@@ -586,7 +536,7 @@ void tout(client_p client_obj)
     setsockopt(client_obj->fd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(timeout));
     setsockopt(client_obj->rd, SOL_SOCKET, SO_RCVTIMEO, (const char *)&timeout, sizeof(timeout));
     setsockopt(client_obj->rd, SOL_SOCKET, SO_SNDTIMEO, (const char *)&timeout, sizeof(timeout));
-   // nclose(client_obj);
+    // nclose(client_obj);
 }
 /***********远程信息提取*************/
 // 域名转ip
@@ -850,7 +800,6 @@ void forward_data(client_p clientobj)
     n = nwrite(clientobj->rd, clientobj->buf, strlen(clientobj->buf));
     if (n < 0)
         d("ERROR writing to socket");
-
     while ((n = nread(clientobj->rd, buffer, _BUF_SIZE_)) > 0)
     {
 
@@ -858,7 +807,6 @@ void forward_data(client_p clientobj)
         {
             nwrite(clientobj->fd, buffer, n);
         }
-
         // bzero(buffer, _BUF_SIZE_);
         // memset(&buffer, 0, sizeof(buffer));
         clearstr(buffer);
@@ -875,13 +823,69 @@ void forward_data(client_p clientobj)
 
     shutdown(clientobj->fd, SHUT_RDWR);
 }
+// 字符串填充
+char generateString(char *str, size_t length)
+{
+    // 生成随机字符串
+
+    // 如果字符串长度不够，用特定字符填充
+    size_t actualLength = strlen(str);
+    if (actualLength < length)
+    {
+        char fillChar = '*'; // 填充字符
+        for (size_t i = actualLength; i < length; i++)
+        {
+            str[i] = fillChar;
+        }
+    }
+    str[length] = '\0'; // 添加字符串终止符
+    
+}
+char string_concatenate(char *dest,  char *src) {  
+    // char hex1[10] = "0xA1";  // 第一个16进制字符串  
+    // char hex2[10] = "0xB2";  // 第二个16进制字符串  
+      // 用于保存拼接结果的字符串  
+    // 将16进制字符串转换为十进制数值  
+    int num1 = strtol(dest, NULL, 16);  
+    int num2 = strtol(src, NULL, 16);  
+    char result[30];
+    // 将十进制数值转换回16进制字符串并拼接  
+    sprintf(result, "%X%X", num1, num2);  // 注意使用大写%X来获取大写的16进制字符
+    return result;
+}  
+// 前面补20字节{ip，端口}
+void incode(client_p clientobj, char *buffer)
+{
+    char rdinfo[INCODE_PAD] = "";
+    char *data[INCODE_PAD+sizeof(buffer)];
+    clearstr(rdinfo);
+    strcat(rdinfo, clientobj->ip);
+    strcat(rdinfo, "-");
+    strcat(rdinfo, clientobj->port);
+    generateString(rdinfo, INCODE_PAD);
+     clearstr(data);
+     strcat(data, rdinfo);
+     strcat(data, buffer);
+    // data=string_concatenate(rdinfo,buffer);
+
+    d16(rdinfo);
+    d16(buffer);
+    d16(data);
+    
+    // string_concatenate(data,rdinfo);
+    // string_concatenate(data,buffer);
+   
+        
+}
 // 发送给服务器
 void f_send(client_p clientobj)
 {
     char buffer[_BUF_SIZE_];
     int n;
+
     while ((n = nread(clientobj->fd, buffer, _BUF_SIZE_)) > 0)
     {
+        incode(clientobj, buffer);
         nwrite(clientobj->rd, buffer, n);
     }
     shutdown(clientobj->rd, SHUT_RDWR);
@@ -895,7 +899,6 @@ void f_back(client_p clientobj)
     int n;
     while ((n = nread(clientobj->rd, buffer, _BUF_SIZE_)) > 0)
     {
-
         nwrite(clientobj->fd, buffer, n);
     }
 
@@ -1062,86 +1065,103 @@ static int start(char *port, char *ip)
     return sock;
 }
 /******************sock5****************************/
-static const char* auth_user="admin";
-static const char* auth_pass="1234";
-enum socksstate {
-	SS_1_CONNECTED,
-	SS_2_NEED_AUTH, /* skipped if NO_AUTH method supported */
-	SS_3_AUTHED,
+static const char *auth_user = "admin";
+static const char *auth_pass = "1234";
+enum socksstate
+{
+    SS_1_CONNECTED,
+    SS_2_NEED_AUTH, /* skipped if NO_AUTH method supported */
+    SS_3_AUTHED,
 };
-enum authmethod {
-	AM_NO_AUTH = 0,
-	AM_GSSAPI = 1,
-	AM_USERNAME = 2,
-	AM_INVALID = 0xFF
+enum authmethod
+{
+    AM_NO_AUTH = 0,
+    AM_GSSAPI = 1,
+    AM_USERNAME = 2,
+    AM_INVALID = 0xFF
 };
-enum errorcode {
-	EC_SUCCESS = 0,
-	EC_GENERAL_FAILURE = 1,
-	EC_NOT_ALLOWED = 2,
-	EC_NET_UNREACHABLE = 3,
-	EC_HOST_UNREACHABLE = 4,
-	EC_CONN_REFUSED = 5,
-	EC_TTL_EXPIRED = 6,
-	EC_COMMAND_NOT_SUPPORTED = 7,
-	EC_ADDRESSTYPE_NOT_SUPPORTED = 8,
+enum errorcode
+{
+    EC_SUCCESS = 0,
+    EC_GENERAL_FAILURE = 1,
+    EC_NOT_ALLOWED = 2,
+    EC_NET_UNREACHABLE = 3,
+    EC_HOST_UNREACHABLE = 4,
+    EC_CONN_REFUSED = 5,
+    EC_TTL_EXPIRED = 6,
+    EC_COMMAND_NOT_SUPPORTED = 7,
+    EC_ADDRESSTYPE_NOT_SUPPORTED = 8,
 };
-static void send_auth_response(int fd, int version, enum authmethod meth) {
-	unsigned char buf[2];
-	buf[0] = version;
-	buf[1] = meth;
-	nwrite(fd, buf, 2);
+static void send_auth_response(int fd, int version, enum authmethod meth)
+{
+    unsigned char buf[2];
+    buf[0] = version;
+    buf[1] = meth;
+    nwrite(fd, buf, 2);
 }
-//效验sock5类型
-static enum authmethod check_auth_method(unsigned char *buf, size_t n) {
-	if(buf[0] != 5) return AM_INVALID;
-	size_t idx = 1;
-	if(idx >= n ) return AM_INVALID;
-   
-	int n_methods = buf[idx];
-	idx++;
-   
-	while(idx <= n && n_methods > 0) {
-      
-       
-		if(buf[idx] == AM_NO_AUTH) {
-			if(!auth_user) return AM_NO_AUTH;
-		} else if(buf[idx] == AM_USERNAME) {
-			if(auth_user) return AM_USERNAME;
-		}
-		idx++;
-		n_methods--;
-	}
-    
-    
-	return AM_INVALID;
+// 效验sock5类型
+static enum authmethod check_auth_method(unsigned char *buf, size_t n)
+{
+    if (buf[0] != 5)
+        return AM_INVALID;
+    size_t idx = 1;
+    if (idx >= n)
+        return AM_INVALID;
+
+    int n_methods = buf[idx];
+    idx++;
+
+    while (idx <= n && n_methods > 0)
+    {
+
+        if (buf[idx] == AM_NO_AUTH)
+        {
+            if (!auth_user)
+                return AM_NO_AUTH;
+        }
+        else if (buf[idx] == AM_USERNAME)
+        {
+            if (auth_user)
+                return AM_USERNAME;
+        }
+        idx++;
+        n_methods--;
+    }
+
+    return AM_INVALID;
 }
-//检查密码
-static enum errorcode check_credentials(unsigned char* buf, size_t n) {
-	if(n < 5) return EC_GENERAL_FAILURE;
-	if(buf[0] != 1) return EC_GENERAL_FAILURE;
-	unsigned ulen, plen;
-	ulen=buf[1];
-	if(n < 2 + ulen + 2) return EC_GENERAL_FAILURE;
-	plen=buf[2+ulen];
-	if(n < 2 + ulen + 1 + plen) return EC_GENERAL_FAILURE;
-	char user[256], pass[256];
-	memcpy(user, buf+2, ulen);
-	memcpy(pass, buf+2+ulen+1, plen);
-	user[ulen] = 0;
-	pass[plen] = 0;
-	if(!strcmp(user, auth_user) && !strcmp(pass, auth_pass)) return EC_SUCCESS;
-	return EC_NOT_ALLOWED;
+// 检查密码
+static enum errorcode check_credentials(unsigned char *buf, size_t n)
+{
+    if (n < 5)
+        return EC_GENERAL_FAILURE;
+    if (buf[0] != 1)
+        return EC_GENERAL_FAILURE;
+    unsigned ulen, plen;
+    ulen = buf[1];
+    if (n < 2 + ulen + 2)
+        return EC_GENERAL_FAILURE;
+    plen = buf[2 + ulen];
+    if (n < 2 + ulen + 1 + plen)
+        return EC_GENERAL_FAILURE;
+    char user[256], pass[256];
+    memcpy(user, buf + 2, ulen);
+    memcpy(pass, buf + 2 + ulen + 1, plen);
+    user[ulen] = 0;
+    pass[plen] = 0;
+    if (!strcmp(user, auth_user) && !strcmp(pass, auth_pass))
+        return EC_SUCCESS;
+    return EC_NOT_ALLOWED;
 }
 /******************sock5****************************/
 void sock5_hand(client_p clientobj)
 {
-    //1、 判断版本
-    //判断是否需要验证
-    //2、返回消息
-    //发送密码
-    //返回消息
-    //3、转发
+    // 1、 判断版本
+    // 判断是否需要验证
+    // 2、返回消息
+    // 发送密码
+    // 返回消息
+    // 3、转发
     clientobj->issock = 0;
     if (clientobj->buf[0] != 5)
     {
@@ -1152,55 +1172,59 @@ void sock5_hand(client_p clientobj)
     enum authmethod am;
     ssize_t n;
     int ret;
-   
-    am=check_auth_method(clientobj->buf,strlen(clientobj->buf));
-     dd(am);
-    if(am == AM_NO_AUTH) state= SS_3_AUTHED;
-    else if (am == AM_USERNAME) state= SS_2_NEED_AUTH;
-    send_auth_response(clientobj->fd, 5, am);
-     d("1111");
-    
-    if(am == AM_INVALID) return;
-    unsigned char buf[1024];
-    
-    while((n = recv(clientobj->fd, buf, sizeof buf, 0)) > 0) {
-		switch(state) {
-			// case SS_1_CONNECTED:
-			// 	am = check_auth_method(buf, n, &t->client);
-			// 	if(am == AM_NO_AUTH) t->state = SS_3_AUTHED;
-			// 	else if (am == AM_USERNAME) t->state = SS_2_NEED_AUTH;
-			// 	send_auth_response(t->client.fd, 5, am);
-			// 	if(am == AM_INVALID) goto breakloop;
-			// 	break;
-			case SS_2_NEED_AUTH:
-            d("dfs");
-				ret = check_credentials(buf, n);
-				send_auth_response(clientobj->fd, 1, ret);
-				if(ret != EC_SUCCESS)
-					return;
-				state = SS_3_AUTHED;
-                
-				break;
-			case SS_3_AUTHED:
-            d(buf);
-				// ret = connect_socks_target(buf, n, &t->client);
-				// if(ret < 0) {
-				// 	send_error(t->client.fd, ret*-1);
-				// 	goto breakloop;
-				// }
-				// remotefd = ret;
-				// send_error(t->client.fd, EC_SUCCESS);
-				// copyloop(t->client.fd, remotefd);
-				// goto breakloop;
 
-		}
-	}
+    am = check_auth_method(clientobj->buf, strlen(clientobj->buf));
+    dd(am);
+    if (am == AM_NO_AUTH)
+        state = SS_3_AUTHED;
+    else if (am == AM_USERNAME)
+        state = SS_2_NEED_AUTH;
+    send_auth_response(clientobj->fd, 5, am);
+    d("1111");
+
+    if (am == AM_INVALID)
+        return;
+    unsigned char buf[1024];
+
+    while ((n = recv(clientobj->fd, buf, sizeof buf, 0)) > 0)
+    {
+        switch (state)
+        {
+        // case SS_1_CONNECTED:
+        // 	am = check_auth_method(buf, n, &t->client);
+        // 	if(am == AM_NO_AUTH) t->state = SS_3_AUTHED;
+        // 	else if (am == AM_USERNAME) t->state = SS_2_NEED_AUTH;
+        // 	send_auth_response(t->client.fd, 5, am);
+        // 	if(am == AM_INVALID) goto breakloop;
+        // 	break;
+        case SS_2_NEED_AUTH:
+            d("dfs");
+            ret = check_credentials(buf, n);
+            send_auth_response(clientobj->fd, 1, ret);
+            if (ret != EC_SUCCESS)
+                return;
+            state = SS_3_AUTHED;
+
+            break;
+        case SS_3_AUTHED:
+            d(buf);
+            // ret = connect_socks_target(buf, n, &t->client);
+            // if(ret < 0) {
+            // 	send_error(t->client.fd, ret*-1);
+            // 	goto breakloop;
+            // }
+            // remotefd = ret;
+            // send_error(t->client.fd, EC_SUCCESS);
+            // copyloop(t->client.fd, remotefd);
+            // goto breakloop;
+        }
+    }
 }
 
 // 工作进程
 void workclient(client_p clientobj, epoll_data_t evdata)
 {
-     sock5_hand(clientobj);
+    sock5_hand(clientobj);
     if (clientobj->issock != 1)
     {
         /******这里先检查buf信息；然后连接远程******/
@@ -1216,7 +1240,7 @@ void workclient(client_p clientobj, epoll_data_t evdata)
         }
 
         d("1");
-         tout(clientobj);
+        tout(clientobj);
         pid_t pid3 = fork();
         if (pid3 == 0)
         {
