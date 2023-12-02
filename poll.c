@@ -24,6 +24,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <pthread.h>
+const char *key = "ng169.com"; // 自定义密码
 #define Malloc(type, n) (type *)malloc((n) * sizeof(type))
 #define d(msg)                                                       \
     {                                                                \
@@ -51,6 +52,12 @@ void sigchld_handler(int signal)
 {
     while (waitpid(-1, NULL, WNOHANG) > 0)
         ;
+}
+int strtoint(char *str)
+{
+    // int num = str - '0';
+    int num = atoi(str);
+    return num;
 }
 void regfork()
 {
@@ -86,6 +93,17 @@ typedef struct client
 
     char buf[_BUF_SIZE_];
 } client_t, *client_p;
+typedef struct param
+{
+    char *port;   // 端口
+    char *remote; // 远程端套子接 127.0.0.1:1234
+    char *rip;    // 远程端套子接 127.0.0.1:1234
+    char *rport;  // 远程端套子接 127.0.0.1:1234
+    char * type;    // 1,2    1转发客户端，2转发服务端 默认为0表示正常代理
+    int help;    // 显示帮助信息
+    int isfront; // 前台显示isfront
+} param_t, *param_p;
+param_t param;
 _Bool checkTsl(char *buf)
 {
     char *conntmp = "CONNECT";
@@ -135,9 +153,9 @@ void dd(int str)
 void d16(const char *buffer)
 {
     int size = sizeof(buffer) / sizeof(char);
-    
+
     size_t len = strlen(buffer);
-     
+
     // size_t len = size;
     if (buffer == NULL || len <= 0)
     {
@@ -424,7 +442,7 @@ struct sockaddr_in getadd(char *ip, char *port)
     struct sockaddr_in dest_addr;
     memset(&dest_addr, 0, sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
-    dest_addr.sin_port = htons(atoi(port));
+    dest_addr.sin_port = htons(strtoint(port));
     // dest_addr.sin_addr.s_addr = htons(ip);
     if (inet_pton(AF_INET, ip, &dest_addr.sin_addr) <= 0)
     {
@@ -839,43 +857,43 @@ char generateString(char *str, size_t length)
         }
     }
     str[length] = '\0'; // 添加字符串终止符
-    
 }
-char string_concatenate(char *dest,  char *src) {  
-    // char hex1[10] = "0xA1";  // 第一个16进制字符串  
-    // char hex2[10] = "0xB2";  // 第二个16进制字符串  
-      // 用于保存拼接结果的字符串  
-    // 将16进制字符串转换为十进制数值  
-    int num1 = strtol(dest, NULL, 16);  
-    int num2 = strtol(src, NULL, 16);  
-    char result[30];
-    // 将十进制数值转换回16进制字符串并拼接  
-    sprintf(result, "%X%X", num1, num2);  // 注意使用大写%X来获取大写的16进制字符
-    return result;
-}  
+
+// 定义密钥和初始化向量
+void encrypt(const uint8_t *input, const uint8_t *key, uint8_t *output)
+{
+    size_t len = strlen(input);
+    for (size_t i = 0; i < len; ++i)
+    {
+        output[i] = input[i] ^ key[i % strlen((char *)key)];
+    }
+}
+
+void decrypt(const uint8_t *input, const uint8_t *key, uint8_t *output)
+{
+    // XOR加密是对称的，因此解密函数与加密函数相同
+    encrypt(input, key, output);
+}
 // 前面补20字节{ip，端口}
 void incode(client_p clientobj, char *buffer)
 {
     char rdinfo[INCODE_PAD] = "";
-    char *data[INCODE_PAD+sizeof(buffer)];
+    char *data[INCODE_PAD + sizeof(buffer)];
     clearstr(rdinfo);
     strcat(rdinfo, clientobj->ip);
     strcat(rdinfo, "-");
     strcat(rdinfo, clientobj->port);
     generateString(rdinfo, INCODE_PAD);
-     clearstr(data);
-     strcat(data, rdinfo);
-     strcat(data, buffer);
-    // data=string_concatenate(rdinfo,buffer);
-
-    d16(rdinfo);
-    d16(buffer);
-    d16(data);
-    
-    // string_concatenate(data,rdinfo);
-    // string_concatenate(data,buffer);
-   
-        
+    clearstr(data);
+    strcat(data, rdinfo);
+    strcat(data, buffer);
+    uint8_t ciphertext[strlen(data)];
+    uint8_t decrypted[strlen(data)];
+    encrypt((const uint8_t *)data, (const uint8_t *)key, ciphertext);
+    // 解密
+    decrypt(ciphertext, (const uint8_t *)key, decrypted);
+    // d16(data);
+    // d(ciphertext);
 }
 // 发送给服务器
 void f_send(client_p clientobj)
@@ -906,6 +924,7 @@ void f_back(client_p clientobj)
 
     shutdown(clientobj->fd, SHUT_RDWR);
 }
+
 int connect_remote(client_p clientobj)
 {
     if (clientobj->rd > 0)
@@ -919,7 +938,7 @@ int connect_remote(client_p clientobj)
     // const char* host_name = "www.baidu.com";
     // const char* http_request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
     // serv_addr=getadd(clientobj->ip,clientobj->port);
-    portno = atoi(clientobj->port);
+    portno = strtoint(clientobj->port);
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
     if (sockfd < 0)
         d("ERROR opening socket");
@@ -948,6 +967,8 @@ void tochar(int data, char *ret)
 void toint(char data, int *ret)
 {
     ret = atoi(data);
+    // ret = strtoint(data);
+    //    *ret=ret1;
 }
 // 获取客户端信息ip：端口
 char *getclientinfo(client_p clientobj)
@@ -996,15 +1017,10 @@ int init_remote(client_p clientobj)
     char *host = extract_host(buftmp, &destdomain, &destip, &destport);
 
     d(destdomain);
-    // d(destip);
-    // d(destport);
-    if (*host == NULL)
+    if (host == NULL)
     {
         d("没匹配到目标,尝试端口缓存恢复");
 
-        // dd(atoi(nget(ipinfo)));
-        // close(clientobj->fd);
-        // clientobj->rd = atoi(nget(ipinfo));
         return 0;
         // break;
     }
@@ -1433,24 +1449,115 @@ int nstart()
     //     return 1;
     // }
 
-    // int port = atoi(SERVER_PORT);
     //  char *ip=argv[1];
     char *ip = "0.0.0.0";
-    char *port = SERVER_PORT;
-    printf("Listening on port %s...\n", SERVER_PORT);
+   char *port = SERVER_PORT;
+if(param.port!=""){
+port=param.port;
+}
+
+
+
+
+ 
+    printf("Listening on port %s...\n", port);
     int listen_sock = start(port, ip);
     epoll_server(listen_sock);
     close(listen_sock);
     return 0;
 }
+// 帮助信息
+void help() {
+    d("支持绑定端口port ");
+    d("如：epoll -port 1234");
+    d("支持运行 到前台-isfront ");
+    d("如：epoll -isfront 1");
+    d("支持参数type；值为client 或者server,不输入type参数默认模式为常规代理；否则表示加密代理；需要运行对应命令以及服务端命令");
+    d("支持参数remote；值为127.0.0.1:1234");
+    d("如(client必须输入对应server模式的remote参数)：epoll -port 1234 -type client -remote 127.0.0.1:1234");
+}
+char *ngoptarg;
+int optind = 1;
+void substring(char *dest, const char *src, int start, int length)
+{
+    // 确保源字符串长度足够
+    if (start + length > strlen(src))
+    {
+        length = strlen(src) - start;
+    }
+    // 截取字符串并复制到目标字符串中
+    int i;
+    for (i = 0; i < length; i++)
+    {
+        dest[i] = src[start + i];
+    }
+    dest[i] = '\0'; // 添加字符串结束符
+}
+
 /* 处理僵尸进程 */
+void ng_getopt(int argc, char *argv[])
+{
+    param.isfront = 1;
+    param.type = "";
+    param.help = 0;
+    param.port = SERVER_PORT;
+    param.remote = "";
+    char *opt;
+    for (size_t i = 0; i < argc; i++)
+    {
+        if (argv[i][0] == '-')
+        {
+            opt = argv[i];
+            
+            if(i<(argc-1)){
+             i++;
+            ngoptarg = argv[i];
+            }
+           if(strcmp("-port",opt)==0){
+            // ngoptarg = argv[i];
+            param.port=ngoptarg;
+           }
+           if(strcmp("-isfront",opt)==0){
+            param.isfront=1;
+           }
+           if(strcmp("-remote",opt)==0){
+            // ngoptarg = argv[i];
+            param.remote=ngoptarg;
+           }
+           if(strcmp("-help",opt)==0){
+            param.help=1;
+           }
+           
+           if(strcmp("--help",opt)==0){
+            param.help=1;
+           }
+           if(strcmp("-type",opt)==0){
+            //  ngoptarg = argv[i];
+            param.type=(ngoptarg);
+            // toint(ngoptarg,&param.type);
+           }
+           
+        }
+    }
+}
 
 void main(int argc, char *argv[])
 {
+    ng_getopt(argc, argv);
+    
+    if(param.help==1){
+        help();
+        exit(1);
+    }
+   if(param.isfront==1){
+    ndaemon=1;
+   }else{
+    ndaemon=0;
+   }
+
     // signal(SIGCHLD, sigchld_handler); // 防止子进程变成僵尸进程
     if (ndaemon)
     {
-
         if ((pid2 = fork()) == 0)
         {
             // setsid();
