@@ -1514,29 +1514,23 @@ void ng_getopt(int argc, char *argv[])
             ngoptarg = argv[i];
             }
            if(strcmp("-port",opt)==0){
-            // ngoptarg = argv[i];
             param.port=ngoptarg;
            }
            if(strcmp("-isfront",opt)==0){
             param.isfront=1;
            }
            if(strcmp("-remote",opt)==0){
-            // ngoptarg = argv[i];
             param.remote=ngoptarg;
            }
            if(strcmp("-help",opt)==0){
             param.help=1;
            }
-           
            if(strcmp("--help",opt)==0){
             param.help=1;
            }
            if(strcmp("-type",opt)==0){
-            //  ngoptarg = argv[i];
             param.type=(ngoptarg);
-            // toint(ngoptarg,&param.type);
            }
-           
         }
     }
 }
