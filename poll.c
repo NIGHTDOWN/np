@@ -24,6 +24,7 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <pthread.h>
+#include <stdbool.h>
 const char *key = "ng169.com"; // 自定义密码
 #define Malloc(type, n) (type *)malloc((n) * sizeof(type))
 #define d(msg)                                                       \
@@ -44,6 +45,7 @@ const char *key = "ng169.com"; // 自定义密码
 #define SHMID_KEY 0x169
 // 守护进程标识；0非后台进程，1后台进程
 int ndaemon = 0;
+char *nmode = 0;
 static int m_pid;
 int exptime = 3600;
 clock_t start_time, end_time;
@@ -99,9 +101,9 @@ typedef struct param
     char *remote; // 远程端套子接 127.0.0.1:1234
     char *rip;    // 远程端套子接 127.0.0.1:1234
     char *rport;  // 远程端套子接 127.0.0.1:1234
-    char * type;    // 1,2    1转发客户端，2转发服务端 默认为0表示正常代理
-    int help;    // 显示帮助信息
-    int isfront; // 前台显示isfront
+    char *type;   // 1,2    1转发客户端，2转发服务端 默认为0表示正常代理
+    int help;     // 显示帮助信息
+    int isfront;  // 前台显示isfront
 } param_t, *param_p;
 param_t param;
 _Bool checkTsl(char *buf)
@@ -478,6 +480,7 @@ int nwrite(int fd, char *buffer, int count)
 {
     if (strlen(buffer) < 0)
         return 1;
+    count = strlen(buffer);
     return send(fd, buffer, count, 0);
     int len;
     int bytestosend;
@@ -629,6 +632,7 @@ char **split_string(char *str, char *delim)
 // 提取域名端口信息
 char *extract_host(char *buffer, char **host, char **ip, char **port)
 {
+
     regex_t regex;
     int ret;
 
@@ -838,7 +842,6 @@ void forward_data(client_p clientobj)
         lastnum = n;
     }
     shutdown(clientobj->rd, SHUT_RDWR);
-
     shutdown(clientobj->fd, SHUT_RDWR);
 }
 // 字符串填充
@@ -875,7 +878,7 @@ void decrypt(const uint8_t *input, const uint8_t *key, uint8_t *output)
     encrypt(input, key, output);
 }
 // 前面补20字节{ip，端口}
-void incode(client_p clientobj, char *buffer)
+char *encode(client_p clientobj, char *buffer)
 {
     char rdinfo[INCODE_PAD] = "";
     char *data[INCODE_PAD + sizeof(buffer)];
@@ -890,21 +893,124 @@ void incode(client_p clientobj, char *buffer)
     uint8_t ciphertext[strlen(data)];
     uint8_t decrypted[strlen(data)];
     encrypt((const uint8_t *)data, (const uint8_t *)key, ciphertext);
+
+    char *cipher;
+    cipher = (char *)ciphertext;
+
+    return cipher;
     // 解密
     decrypt(ciphertext, (const uint8_t *)key, decrypted);
     // d16(data);
     // d(ciphertext);
+}
+bool isValidIPv4(const char *ip)
+{
+    struct in_addr addr;
+    return inet_pton(AF_INET, ip, &addr) == 1;
+}
+
+bool isValidIPv6(const char *ip)
+{
+    struct in6_addr addr;
+    return inet_pton(AF_INET6, ip, &addr) == 1;
+}
+void removeAsterisks(char *str)
+{
+    if (str != NULL)
+    {
+        char *ptr = str;
+        while (*ptr != '\0')
+        {
+            if (*ptr == '*')
+            {
+                // Shift characters to the left to overwrite asterisks
+                memmove(ptr, ptr + 1, strlen(ptr));
+            }
+            else
+            {
+                ptr++;
+            }
+        }
+    }
+}
+void extractIPandPort(const char *str, char *ip, size_t ipSize, char *port, size_t portSize)
+{
+    char *dashPtr = strchr(str, '-');
+    if (dashPtr != NULL)
+    {
+        strncpy(ip, str, dashPtr - str);
+        ip[dashPtr - str] = '\0';
+        strncpy(port, dashPtr + 1, portSize - 1);
+        port[portSize - 1] = '\0';
+    }
+    else
+    {
+        // No IP and port found in the string
+        ip[0] = '\0';
+        port[0] = '\0';
+    }
+    removeAsterisks(port);
+}
+char ip[40];
+char port[6];
+bool decode(client_p clientobj, char *buffer)
+{
+    uint8_t decrypted[strlen(buffer)];
+    // 解密
+    decrypt(buffer, (const uint8_t *)key, decrypted);
+    char *cipher;
+    cipher = (char *)decrypted;
+    if (strcmp(cipher, "") == 0)
+    {
+        d("参数错误");
+        return false;
+    }
+    char part1[41];                  // 第一部分，前40个字符
+    char part2[strlen(cipher) - 39]; // 第二部分，剩下的字符
+    // 复制前40个字符到part1
+    strncpy(part1, cipher, 40);
+    part1[40] = '\0'; // 确保字符串以null字符结尾
+    // 复制剩下的字符到part2
+    strcpy(part2, cipher + 40);
+    strcpy(clientobj->buf, part2);
+    
+    extractIPandPort(part1, ip, sizeof(ip), port, sizeof(port));
+    //     strcpy(clientobj->ip,ip);
+    //     strcpy(clientobj->port,port);
+    if (strcmp(ip, "") == 0)
+    {
+        d("参数错误");
+        return false;
+    }
+    if (strcmp(port, "") == 0)
+    {
+        d("参数错误");
+        return false;
+    }
+    clientobj->ip = &ip;
+    clientobj->port = &port;
+
+    return true;
 }
 // 发送给服务器
 void f_send(client_p clientobj)
 {
     char buffer[_BUF_SIZE_];
     int n;
-
     while ((n = nread(clientobj->fd, buffer, _BUF_SIZE_)) > 0)
     {
-        incode(clientobj, buffer);
-        nwrite(clientobj->rd, buffer, n);
+        if (strcmp(nmode, "client") == 0)
+        {
+            char *encodestr = encode(clientobj, buffer);
+            char sendtmp[strlen(encodestr)];
+            strcpy(sendtmp, encodestr);
+            d(sendtmp);
+            nwrite(clientobj->rd, sendtmp, n);
+        }
+        else
+        {
+            nwrite(clientobj->rd, buffer, n);
+        }
     }
     shutdown(clientobj->rd, SHUT_RDWR);
     shutdown(clientobj->fd, SHUT_RDWR);
@@ -933,20 +1039,31 @@ int connect_remote(client_p clientobj)
     }
     int sockfd, portno, n;
     struct sockaddr_in serv_addr;
-    // struct hostent *server;
-    // char buffer[_BUF_SIZE_];
-    // const char* host_name = "www.baidu.com";
-    // const char* http_request = "GET / HTTP/1.1\r\nHost: www.baidu.com\r\nConnection: close\r\n\r\n";
-    // serv_addr=getadd(clientobj->ip,clientobj->port);
-    portno = strtoint(clientobj->port);
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0)
-        d("ERROR opening socket");
-
-    serv_addr.sin_family = AF_INET;
-
-    serv_addr.sin_port = htons(portno);
-    serv_addr.sin_addr.s_addr = inet_addr(clientobj->ip);
+    if (strcmp(nmode, "client") == 0)
+    {
+        portno = strtoint(param.rport);
+        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd < 0)
+            d("ERROR opening socket");
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(portno);
+        serv_addr.sin_addr.s_addr = inet_addr(param.rip);
+    }
+    else
+    {
+        portno = strtoint(clientobj->port);
+        sockfd = socket(AF_INET, SOCK_STREAM, 0);
+        if (sockfd < 0)
+            d("ERROR opening socket");
+        serv_addr.sin_family = AF_INET;
+        serv_addr.sin_port = htons(portno);
+        // serv_addr.sin_addr.s_addr = inet_addr(clientobj->ip);
+        serv_addr.sin_addr.s_addr = inet_addr("120.77.85.204");
+        
+        d(clientobj->ip);
+        
+        
+    }
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
         d("ERROR connecting");
@@ -1013,41 +1130,58 @@ int init_remote(client_p clientobj)
     char buftmp[_BUF_SIZE_];
     strcpy(buftmp, clientobj->buf);
 
-    clientobj->isinit = 1; // 只初始化一次；无论是否匹配host地址
-    char *host = extract_host(buftmp, &destdomain, &destip, &destport);
-
-    d(destdomain);
-    if (host == NULL)
+    if (strcmp(nmode, "server") == 0)
     {
-        d("没匹配到目标,尝试端口缓存恢复");
 
-        return 0;
-        // break;
+        bool tmp = decode(clientobj, buftmp);
+
+        if (tmp)
+        {
+            clientobj->istsl = 0;
+            connect_remote(clientobj);
+            
+            dd(clientobj->rd);
+            if (clientobj->rd > 0)
+            {
+                clientobj->ishand = 1;
+            }
+            else
+            {
+                clientobj->ishand = 0;
+            }
+        }
     }
     else
     {
-        clientobj->host = host;
-        clientobj->ip = destip;
-        clientobj->port = destport;
-        // 建立远程链接
-    }
 
-    clientobj->istsl = checkTsl(buftmp);
+        clientobj->isinit = 1; // 只初始化一次；无论是否匹配host地址
+        char *host = extract_host(buftmp, &destdomain, &destip, &destport);
 
-    clientobj->rd = connect_remote(clientobj);
-    d("链接2");
-    char rd[100];
-    tochar(clientobj->rd, rd);
-    // nset(ipinfo, rd, 60);
-    // 这里缓存下信息
-
-    if (clientobj->rd > 0)
-    {
-        clientobj->ishand = 1;
-    }
-    else
-    {
-        clientobj->ishand = 0;
+        d(destdomain);
+        if (host == NULL)
+        {
+            d("没匹配到目标,尝试端口缓存恢复");
+            return 0;
+        }
+        else
+        {
+            clientobj->host = host;
+            clientobj->ip = destip;
+            clientobj->port = destport;
+            // 建立远程链接
+        }
+        clientobj->istsl = checkTsl(buftmp);
+        clientobj->rd = connect_remote(clientobj);
+        char rd[100];
+        tochar(clientobj->rd, rd);
+        if (clientobj->rd > 0)
+        {
+            clientobj->ishand = 1;
+        }
+        else
+        {
+            clientobj->ishand = 0;
+        }
     }
     return clientobj->ishand;
 }
@@ -1241,6 +1375,7 @@ void sock5_hand(client_p clientobj)
 void workclient(client_p clientobj, epoll_data_t evdata)
 {
     sock5_hand(clientobj);
+
     if (clientobj->issock != 1)
     {
         /******这里先检查buf信息；然后连接远程******/
@@ -1248,14 +1383,12 @@ void workclient(client_p clientobj, epoll_data_t evdata)
         if (init_remote(clientobj) <= 0)
         {
 
-            // clientobj = (client_p)evdata.ptr;
             d("尝试从epoll重载客户端对象");
             // d(clientobj->host);
             nclose(clientobj);
             return;
         }
 
-        d("1");
         tout(clientobj);
         pid_t pid3 = fork();
         if (pid3 == 0)
@@ -1275,7 +1408,7 @@ void workclient(client_p clientobj, epoll_data_t evdata)
         //     int status;
         //     waitpid(pid3, &status, 0); // 等待子进程结束
         // }
-        d("2");
+
         pid_t pid4 = fork();
         if (pid4 == 0)
         {
@@ -1285,7 +1418,7 @@ void workclient(client_p clientobj, epoll_data_t evdata)
             f_back(clientobj);
             exit(1);
         }
-        d("3");
+
         // if (pid4 > 0)
         // {
         //     int status;
@@ -1451,15 +1584,12 @@ int nstart()
 
     //  char *ip=argv[1];
     char *ip = "0.0.0.0";
-   char *port = SERVER_PORT;
-if(param.port!=""){
-port=param.port;
-}
+    char *port = SERVER_PORT;
+    if (param.port != "")
+    {
+        port = param.port;
+    }
 
-
-
-
- 
     printf("Listening on port %s...\n", port);
     int listen_sock = start(port, ip);
     epoll_server(listen_sock);
@@ -1467,7 +1597,8 @@ port=param.port;
     return 0;
 }
 // 帮助信息
-void help() {
+void help()
+{
     d("支持绑定端口port ");
     d("如：epoll -port 1234");
     d("支持运行 到前台-isfront ");
@@ -1508,29 +1639,36 @@ void ng_getopt(int argc, char *argv[])
         if (argv[i][0] == '-')
         {
             opt = argv[i];
-            
-            if(i<(argc-1)){
-             i++;
-            ngoptarg = argv[i];
+
+            if (i < (argc - 1))
+            {
+                i++;
+                ngoptarg = argv[i];
             }
-           if(strcmp("-port",opt)==0){
-            param.port=ngoptarg;
-           }
-           if(strcmp("-isfront",opt)==0){
-            param.isfront=1;
-           }
-           if(strcmp("-remote",opt)==0){
-            param.remote=ngoptarg;
-           }
-           if(strcmp("-help",opt)==0){
-            param.help=1;
-           }
-           if(strcmp("--help",opt)==0){
-            param.help=1;
-           }
-           if(strcmp("-type",opt)==0){
-            param.type=(ngoptarg);
-           }
+            if (strcmp("-port", opt) == 0)
+            {
+                param.port = ngoptarg;
+            }
+            if (strcmp("-isfront", opt) == 0)
+            {
+                param.isfront = 1;
+            }
+            if (strcmp("-remote", opt) == 0)
+            {
+                param.remote = ngoptarg;
+            }
+            if (strcmp("-help", opt) == 0)
+            {
+                param.help = 1;
+            }
+            if (strcmp("--help", opt) == 0)
+            {
+                param.help = 1;
+            }
+            if (strcmp("-type", opt) == 0)
+            {
+                param.type = (ngoptarg);
+            }
         }
     }
 }
@@ -1538,17 +1676,36 @@ void ng_getopt(int argc, char *argv[])
 void main(int argc, char *argv[])
 {
     ng_getopt(argc, argv);
-    
-    if(param.help==1){
+    if (param.help == 1)
+    {
         help();
         exit(1);
     }
-   if(param.isfront==1){
-    ndaemon=1;
-   }else{
-    ndaemon=0;
-   }
-
+    if (param.isfront == 1)
+    {
+        ndaemon = 1;
+    }
+    else
+    {
+        ndaemon = 0;
+    }
+    nmode = param.type;
+    if (strcmp(nmode, "client") == 0)
+    {
+        if (param.remote == "")
+        {
+            d("客户端模式必须输入远程ip：端口");
+            exit(1);
+        }
+        else
+        {
+            d("远程服务器信息：");
+            d(param.remote);
+            char **tmp = split_string(param.remote, ":");
+            param.rip = tmp[0];
+            param.rport = tmp[1];
+        }
+    }
     // signal(SIGCHLD, sigchld_handler); // 防止子进程变成僵尸进程
     if (ndaemon)
     {
