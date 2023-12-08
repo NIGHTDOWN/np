@@ -486,26 +486,27 @@ int nwrite(int fd, char *buffer, int count)
     if (strlen(buffer) < 0)
         return 1;
     count = strlen(buffer);
+   
     return send(fd, buffer, count, 0);
-    int len;
-    int bytestosend;
-    bytestosend = count;
-    while (1)
-    {
-        len = send(fd, buffer, bytestosend, MSG_NOSIGNAL);
-        if (len < 0)
-        {
-            if (errno == EINTR)
-                continue;
-            else
-                return -errno;
-        }
-        if ((int)len == bytestosend)
-            break;
-        buffer += len;
-        bytestosend -= len;
-    }
-    return count;
+    // int len;
+    // int bytestosend;
+    // bytestosend = count;
+    // while (1)
+    // {
+    //     len = send(fd, buffer, bytestosend, MSG_NOSIGNAL);
+    //     if (len < 0)
+    //     {
+    //         if (errno == EINTR)
+    //             continue;
+    //         else
+    //             return -errno;
+    //     }
+    //     if ((int)len == bytestosend)
+    //         break;
+    //     buffer += len;
+    //     bytestosend -= len;
+    // }
+    // return count;
 }
 
 static void usage(const char *proc)
@@ -1071,13 +1072,14 @@ int connect_remote(client_p clientobj)
             d("ERROR opening socket");
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_port = htons(portno);
+        // serv_addr.sin_port = htons(80);
         char iptmp[strlen(clientobj->ip)];
         strcpy(iptmp,clientobj->ip);
         // iptmp[strlen(clientobj->ip)]="\0";
         // d(iptmp);
-        // serv_addr.sin_addr.s_addr = inet_addr(iptmp);
-        serv_addr.sin_addr.s_addr = inet_addr(clientobj->ip);
-        // serv_addr.sin_addr.s_addr = inet_addr("120.77.85.204");
+        serv_addr.sin_addr.s_addr = inet_addr(iptmp);
+        // serv_addr.sin_addr.s_addr = inet_addr(clientobj->ip);
+        // serv_addr.sin_addr.s_addr = inet_addr("183.2.172.185");
     }
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {

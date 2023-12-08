@@ -953,8 +953,9 @@ int connect_remote(client_p clientobj)
     serv_addr.sin_family = AF_INET;
 
     serv_addr.sin_port = htons(portno);
-    dd(portno);
+   
     serv_addr.sin_addr.s_addr = inet_addr(clientobj->ip);
+    
      d(clientobj->ip);
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
