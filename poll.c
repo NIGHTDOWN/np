@@ -33,7 +33,12 @@ const char *key = "ng169.com"; // 自定义密码
                                                                      \
         printf("\n");                                                \
     }
-
+#define dd(msg)                                                       \
+    {                                                                \
+        printf(" %d                           %d\n", msg, __LINE__); \
+                                                                     \
+        printf("\n");                                                \
+    }
 #define SERVER_PORT "8088"
 #define _BACKLOG_ 5
 #define _BUF_SIZE_ 2099
@@ -146,11 +151,11 @@ char *strcp(char *dest, char *src)
     strcpy(dest, src);
     return dest;
 }
-void dd(int str)
-{
-    // db(__FILE__, __LINE__, __func__, "输出内容：%s", str);
-    printf("输出信息:%d\n", str);
-}
+// void dd(int str)
+// {
+//     // db(__FILE__, __LINE__, __func__, "输出内容：%s", str);
+//     printf("输出信息:%d\n", str);
+// }
 // 打印16进制
 void d16(const char *buffer)
 {
@@ -549,6 +554,7 @@ void nclose(client_p clientobj)
 
 void tout(client_p client_obj)
 {
+    // return ;
     /* Set timeout for client-side I/O operations */
     struct timeval timeout;
     timeout.tv_sec = 5;
@@ -815,10 +821,15 @@ void forward_data(client_p clientobj)
         return;
     char buffer[_BUF_SIZE_];
     size_t n, lastnum = 0;
+    if(strcmp("server",nmode)!=0){
     rewrite_header(clientobj);
+    }
+    
     // 这里不能去掉阻塞；否则无法发送消息
     //  set_no_block(clientobj->fd);
     //  set_no_block(clientobj->rd);
+    d16(clientobj->buf);
+    
     n = nwrite(clientobj->rd, clientobj->buf, strlen(clientobj->buf));
     if (n < 0)
         d("ERROR writing to socket");
@@ -827,10 +838,12 @@ void forward_data(client_p clientobj)
 
         if (strlen(buffer) > 0)
         {
+             
             nwrite(clientobj->fd, buffer, n);
+            d("返回");
+            dd(clientobj->fd);
         }
-        // bzero(buffer, _BUF_SIZE_);
-        // memset(&buffer, 0, sizeof(buffer));
+
         clearstr(buffer);
         if (lastnum != 0)
         {
@@ -848,7 +861,6 @@ void forward_data(client_p clientobj)
 char generateString(char *str, size_t length)
 {
     // 生成随机字符串
-
     // 如果字符串长度不够，用特定字符填充
     size_t actualLength = strlen(str);
     if (actualLength < length)
@@ -892,16 +904,14 @@ char *encode(client_p clientobj, char *buffer)
     strcat(data, buffer);
     uint8_t ciphertext[strlen(data)];
     uint8_t decrypted[strlen(data)];
+   
     encrypt((const uint8_t *)data, (const uint8_t *)key, ciphertext);
-
     char *cipher;
     cipher = (char *)ciphertext;
-
+    
     return cipher;
-    // 解密
-    decrypt(ciphertext, (const uint8_t *)key, decrypted);
-    // d16(data);
-    // d(ciphertext);
+    // // 解密
+    // decrypt(ciphertext, (const uint8_t *)key, decrypted);
 }
 bool isValidIPv4(const char *ip)
 {
@@ -989,7 +999,6 @@ bool decode(client_p clientobj, char *buffer)
     }
     clientobj->ip = &ip;
     clientobj->port = &port;
-
     return true;
 }
 // 发送给服务器
@@ -999,16 +1008,20 @@ void f_send(client_p clientobj)
     int n;
     while ((n = nread(clientobj->fd, buffer, _BUF_SIZE_)) > 0)
     {
+        d16(buffer);
         if (strcmp(nmode, "client") == 0)
         {
+           
             char *encodestr = encode(clientobj, buffer);
-            char sendtmp[strlen(encodestr)];
+            char sendtmp[strlen(encodestr)+1];
             strcpy(sendtmp, encodestr);
-            d(sendtmp);
+           sendtmp[strlen(encodestr)]="\0";
+            
             nwrite(clientobj->rd, sendtmp, n);
         }
         else
         {
+            d("dfsdf");
             nwrite(clientobj->rd, buffer, n);
         }
     }
@@ -1021,13 +1034,14 @@ void f_back(client_p clientobj)
 {
     char buffer[_BUF_SIZE_];
     int n;
+    d("3435");
     while ((n = nread(clientobj->rd, buffer, _BUF_SIZE_)) > 0)
     {
+       
+        d(buffer);
         nwrite(clientobj->fd, buffer, n);
     }
-
     shutdown(clientobj->rd, SHUT_RDWR);
-
     shutdown(clientobj->fd, SHUT_RDWR);
 }
 
@@ -1057,12 +1071,13 @@ int connect_remote(client_p clientobj)
             d("ERROR opening socket");
         serv_addr.sin_family = AF_INET;
         serv_addr.sin_port = htons(portno);
-        // serv_addr.sin_addr.s_addr = inet_addr(clientobj->ip);
-        serv_addr.sin_addr.s_addr = inet_addr("120.77.85.204");
-        
-        d(clientobj->ip);
-        
-        
+        char iptmp[strlen(clientobj->ip)];
+        strcpy(iptmp,clientobj->ip);
+        // iptmp[strlen(clientobj->ip)]="\0";
+        // d(iptmp);
+        // serv_addr.sin_addr.s_addr = inet_addr(iptmp);
+        serv_addr.sin_addr.s_addr = inet_addr(clientobj->ip);
+        // serv_addr.sin_addr.s_addr = inet_addr("120.77.85.204");
     }
     if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0)
     {
@@ -1070,7 +1085,6 @@ int connect_remote(client_p clientobj)
         // nclose(clientobj);
         return 0;
     }
-
     return sockfd;
 }
 // int转字符串
@@ -1132,15 +1146,16 @@ int init_remote(client_p clientobj)
 
     if (strcmp(nmode, "server") == 0)
     {
-
+        d16(clientobj->buf);
+        clientobj->istsl =0;
+        d16(buftmp);
         bool tmp = decode(clientobj, buftmp);
 
         if (tmp)
         {
             clientobj->istsl = 0;
-            connect_remote(clientobj);
-            
-            dd(clientobj->rd);
+           clientobj->rd =  connect_remote(clientobj);
+           
             if (clientobj->rd > 0)
             {
                 clientobj->ishand = 1;
@@ -1172,6 +1187,7 @@ int init_remote(client_p clientobj)
         }
         clientobj->istsl = checkTsl(buftmp);
         clientobj->rd = connect_remote(clientobj);
+       
         char rd[100];
         tochar(clientobj->rd, rd);
         if (clientobj->rd > 0)
@@ -1390,28 +1406,28 @@ void workclient(client_p clientobj, epoll_data_t evdata)
         }
 
         tout(clientobj);
+       
         pid_t pid3 = fork();
+      
+      
         if (pid3 == 0)
         {
             if (clientobj->istsl == 0)
             {
+                
                 // 如果是http就直接由这里进行消息转发处理
-                forward_data(clientobj);
+                forward_data(clientobj);               
                 exit(1);
             }
             // 这里是https把消息转发给服务器
+           
             f_send(clientobj);
             exit(0);
         }
-        // if (pid3 > 0)
-        // {
-        //     int status;
-        //     waitpid(pid3, &status, 0); // 等待子进程结束
-        // }
-
-        pid_t pid4 = fork();
+         pid_t pid4 = fork();
         if (pid4 == 0)
         {
+             d("fdgdyf");
             // 这里是https流量建立握手
             hand(clientobj);
             // 消息回显
